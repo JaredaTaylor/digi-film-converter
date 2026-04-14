@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-starter_film_emulator.py
+film_emulator.py
 
 A starter film-emulation script using OpenCV + NumPy.
 Features:
@@ -13,13 +13,10 @@ Features:
 - optional .cube LUT support
 
 Usage:
-    python starter_film_emulator.py input.jpg output.jpg --preset portra
-    python starter_film_emulator.py input.jpg output.jpg --preset cinestill --grain 0.08
-    python starter_film_emulator.py input.jpg output.jpg --lut my_lut.cube
+    python film_emulator.py input.jpg output.jpg --preset portra
+    python film_emulator.py input.jpg output.jpg --preset cinestill --grain 0.08
+    python film_emulator.py input.jpg output.jpg --lut my_lut.cube
 """
-
-from __future__ import annotations
-
 import argparse
 import math
 from pathlib import Path
@@ -419,7 +416,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main_film() -> None:
     args = parse_args()
 
     img = read_image(args.input)
@@ -435,7 +432,3 @@ def main() -> None:
     )
     write_image(args.output, out)
     print(f"Saved film-emulated image to: {args.output}")
-
-
-if __name__ == "__main__":
-    main()
