@@ -10,7 +10,7 @@ SAVE_DIR = Path.home() / "photos"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 class Shutter:
-    def __init__(self, camera: Picamera2, processing_queue: Queue, pin=17, pull_up=True, bounce_time=0.1):
+    def __init__(self, camera: Picamera2, processing_queue: Queue | None, pin=17, pull_up=True, bounce_time=0.1):
         self.camera = camera
         self.button = Button(pin, pull_up=pull_up, bounce_time=bounce_time)
         self.button.when_pressed = self.take_photo
@@ -30,5 +30,6 @@ class Shutter:
 
         print(f"Capturing {filename} ...")
         self.camera.capture_file(str(filename))
-        self.processing_queue.put_nowait(filename)
+        if processing_queue:
+            self.processing_queue.put_nowait(filename)
         print("Saved.")
