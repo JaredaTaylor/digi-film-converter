@@ -48,7 +48,7 @@ def main():
     # shutter = Shutter(camera, processing_queue=processing_queue)
     shutter = Shutter(camera, processing_queue=None)
 
-    shutter.button.when_pressed = shutter.take_photo()
+    shutter.button.when_pressed = shutter.take_photo
 
     print("Camera ready. Press button to capture.")
     pause()
