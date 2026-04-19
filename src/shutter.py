@@ -13,7 +13,6 @@ class Shutter:
     def __init__(self, camera: Picamera2, processing_queue: Queue | None, pin=17, pull_up=True, bounce_time=0.1):
         self.camera = camera
         self.button = Button(pin, pull_up=pull_up, bounce_time=bounce_time)
-        self.button.when_pressed = self.take_photo
         self.last_capture_time = 0
         self.capture_cooldown = 1.0
         self.processing_queue = processing_queue
