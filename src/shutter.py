@@ -30,6 +30,6 @@ class Shutter:
 
         print(f"Capturing {filename} ...")
         self.camera.capture_file(str(filename))
-        if processing_queue:
+        if self.processing_queue:
             self.processing_queue.put_nowait(filename)
         print("Saved.")
