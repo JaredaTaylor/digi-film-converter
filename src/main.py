@@ -31,7 +31,14 @@ from picamera2 import Picamera2
 
 def camera_setup() -> Picamera2:
     picam2 = Picamera2()
-    config = picam2.create_still_configuration(main={"size": (4608, 2592)})
+    config = picam2.create_still_configuration(
+        main={"size": (4608, 2592)},
+        controls={
+            "AfMode": controls.AfModeEnum.Continuous,
+            "AfRange": controls.AfRangeEnum.Normal,
+            "AfSpeed": controls.AfSpeedEnum.Normal,
+        },
+    )
     picam2.configure(config)
     picam2.start()
     time.sleep(2)

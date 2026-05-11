@@ -399,8 +399,8 @@ def emulate_film(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Starter film emulator")
-    parser.add_argument("input", help="Input image path")
-    parser.add_argument("output", help="Output image path")
+    parser.add_argument("--input", help="Input image path")
+    parser.add_argument("--output", help="Output image path")
     parser.add_argument(
         "--preset",
         default="portra",
