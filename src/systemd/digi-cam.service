@@ -1,0 +1,22 @@
+# /etc/systemd/system/digi-cam.service
+[Unit]
+Description=Digicam Film Converter
+After=multi-user.target
+
+[Service]
+# Set the working directory so relative paths in your code don't break
+WorkingDirectory=/home/jared/Documents/digi-film-converter/src/
+ExecStart=/usr/bin/python3 -u main.py
+StandardOutput=append:/var/log/digi-cam/digi-cam.log
+StandardError=append:/var/log/digi-cam/digi-cam.log
+
+
+# Run as jared but give him hardware access groups
+User=jared
+Group=jared
+SupplementaryGroups=video gpio input
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

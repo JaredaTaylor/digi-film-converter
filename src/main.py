@@ -8,6 +8,7 @@ from signal import pause
 from shutter import Shutter
 
 from picamera2 import Picamera2
+from libcamera import controls
 
 
 # def film_worker(queue: Queue):
