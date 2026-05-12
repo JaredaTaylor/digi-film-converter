@@ -16,13 +16,18 @@ Usage:
     python film_emulator.py input.jpg output.jpg --preset portra
     python film_emulator.py input.jpg output.jpg --preset cinestill --grain 0.08
     python film_emulator.py input.jpg output.jpg --lut my_lut.cube
+    python film_emulator.py --input input.jpg --output output.jpg --settings preset.json
 """
 import argparse
-import math
+import json
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+
+SETTINGS_SCHEMA_VERSION = 1
 
 
 # ----------------------------
@@ -164,6 +169,110 @@ def stock_color_preset(name: str) -> tuple[np.ndarray, dict]:
     if name not in presets:
         raise ValueError(f"Unknown preset '{name}'. Choose from: {', '.join(presets)}")
     return presets[name]
+
+
+def available_presets() -> tuple[str, ...]:
+    return ("neutral", "portra", "velvia", "cinestill")
+
+
+def _matrix_to_list(matrix: np.ndarray) -> list[list[float]]:
+    return [[float(value) for value in row] for row in matrix.tolist()]
+
+
+@dataclass
+class FilmSettings:
+    preset: str = "portra"
+    lut_path: str | None = None
+    saturation: float = 0.94
+    contrast: float = 1.04
+    fade: float = 0.04
+    color_matrix: list[list[float]] = field(
+        default_factory=lambda: _matrix_to_list(stock_color_preset("portra")[0])
+    )
+    bloom: float = 0.14
+    bloom_threshold: float = 0.72
+    bloom_blur_sigma: float = 12.0
+    halation: float = 0.18
+    halation_threshold: float = 0.78
+    halation_blur_sigma: float = 10.0
+    vignette: float = 0.18
+    grain: float = 0.05
+    grain_size: float = 1.35
+    grain_color: float = 0.18
+    seed: int | None = None
+
+    def color_matrix_array(self) -> np.ndarray:
+        matrix = np.array(self.color_matrix, dtype=np.float32)
+        if matrix.shape != (3, 3):
+            raise ValueError("color_matrix must be a 3x3 matrix")
+        return matrix
+
+
+def settings_for_preset(name: str = "portra") -> FilmSettings:
+    matrix, tuning = stock_color_preset(name)
+    return FilmSettings(
+        preset=name,
+        saturation=float(tuning["saturation"]),
+        contrast=float(tuning["contrast"]),
+        fade=float(tuning["fade"]),
+        color_matrix=_matrix_to_list(matrix),
+    )
+
+
+def settings_to_dict(settings: FilmSettings) -> dict:
+    data = asdict(settings)
+    data["schema_version"] = SETTINGS_SCHEMA_VERSION
+    return data
+
+
+def settings_from_dict(data: dict) -> FilmSettings:
+    version = data.get("schema_version", SETTINGS_SCHEMA_VERSION)
+    if version != SETTINGS_SCHEMA_VERSION:
+        raise ValueError(
+            f"Unsupported settings schema version: {version}. "
+            f"Expected {SETTINGS_SCHEMA_VERSION}."
+        )
+
+    preset = str(data.get("preset", "portra"))
+    settings = settings_for_preset(preset)
+    valid_fields = {item.name for item in fields(FilmSettings)}
+
+    for key, value in data.items():
+        if key == "schema_version" or key not in valid_fields:
+            continue
+        setattr(settings, key, value)
+
+    settings.color_matrix = [
+        [float(value) for value in row]
+        for row in settings.color_matrix
+    ]
+    settings.color_matrix_array()
+
+    for item in fields(FilmSettings):
+        if item.name in {"preset", "lut_path", "color_matrix", "seed"}:
+            continue
+        setattr(settings, item.name, float(getattr(settings, item.name)))
+
+    if settings.seed == "":
+        settings.seed = None
+    elif settings.seed is not None:
+        settings.seed = int(settings.seed)
+
+    if settings.lut_path == "":
+        settings.lut_path = None
+
+    return settings
+
+
+def load_settings(path: str | Path) -> FilmSettings:
+    data = json.loads(Path(path).read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Settings file must contain a JSON object")
+    return settings_from_dict(data)
+
+
+def save_settings(path: str | Path, settings: FilmSettings) -> None:
+    Path(path).write_text(json.dumps(settings_to_dict(settings), indent=2) + "\n")
 
 
 # ----------------------------
@@ -357,8 +466,18 @@ def emulate_film(
     bloom: float = 0.14,
     vignette: float = 0.18,
     seed: int | None = None,
+    settings: FilmSettings | None = None,
 ) -> np.ndarray:
-    matrix, tuning = stock_color_preset(preset)
+    if settings is None:
+        settings = settings_for_preset(preset)
+        settings.lut_path = lut_path
+        settings.grain = grain
+        settings.halation = halation
+        settings.bloom = bloom
+        settings.vignette = vignette
+        settings.seed = seed
+
+    matrix = settings.color_matrix_array()
 
     # work in linear for nicer light effects
     lin = srgb_to_linear(img)
@@ -370,29 +489,45 @@ def emulate_film(
     # tone
     lin = filmic_curve(
         lin,
-        contrast=tuning["contrast"],
-        fade=tuning["fade"],
+        contrast=settings.contrast,
+        fade=settings.fade,
     )
 
     # glow effects
-    lin = add_bloom(lin, strength=bloom)
-    lin = add_halation(lin, strength=halation)
+    lin = add_bloom(
+        lin,
+        strength=settings.bloom,
+        threshold=settings.bloom_threshold,
+        blur_sigma=settings.bloom_blur_sigma,
+    )
+    lin = add_halation(
+        lin,
+        strength=settings.halation,
+        threshold=settings.halation_threshold,
+        blur_sigma=settings.halation_blur_sigma,
+    )
 
     # back to display space
     out = linear_to_srgb(clamp01(lin))
     out = clamp01(out)
 
     # saturation tuning in display space
-    out = apply_saturation(out, tuning["saturation"])
+    out = apply_saturation(out, settings.saturation)
 
     # optional LUT on top
-    if lut_path:
-        lut = load_cube_lut(lut_path)
+    if settings.lut_path:
+        lut = load_cube_lut(settings.lut_path)
         out = apply_cube_lut(out, lut)
 
     # lens / texture finishing
-    out = add_vignette(out, strength=vignette)
-    out = add_film_grain(out, amount=grain, size=1.35, color=0.18, seed=seed)
+    out = add_vignette(out, strength=settings.vignette)
+    out = add_film_grain(
+        out,
+        amount=settings.grain,
+        size=settings.grain_size,
+        color=settings.grain_color,
+        seed=settings.seed,
+    )
 
     return clamp01(out)
 
@@ -401,10 +536,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Starter film emulator")
     parser.add_argument("--input", help="Input image path")
     parser.add_argument("--output", help="Output image path")
+    parser.add_argument("--settings", default=None, help="Optional JSON settings preset")
     parser.add_argument(
         "--preset",
         default="portra",
-        choices=["neutral", "portra", "velvia", "cinestill"],
+        choices=available_presets(),
         help="Film preset"
     )
     parser.add_argument("--lut", default=None, help="Optional .cube LUT path")
@@ -420,15 +556,23 @@ def main_film() -> None:
     args = parse_args()
 
     img = read_image(args.input)
-    out = emulate_film(
-        img,
-        preset=args.preset,
-        lut_path=args.lut,
-        grain=args.grain,
-        halation=args.halation,
-        bloom=args.bloom,
-        vignette=args.vignette,
-        seed=args.seed,
-    )
+    if args.settings:
+        settings = load_settings(args.settings)
+        out = emulate_film(img, settings=settings)
+    else:
+        out = emulate_film(
+            img,
+            preset=args.preset,
+            lut_path=args.lut,
+            grain=args.grain,
+            halation=args.halation,
+            bloom=args.bloom,
+            vignette=args.vignette,
+            seed=args.seed,
+        )
     write_image(args.output, out)
     print(f"Saved film-emulated image to: {args.output}")
+
+
+if __name__ == "__main__":
+    main_film()
